@@ -30,8 +30,8 @@ public:
     should_stop = true;
   }
 
-  void setCallback(std::function<void(const QString&)> callback) {
-    this->callback = callback;
+  void setCallback(std::function<void(const QString&)> cb) {
+    this->callback = cb;
   }
 
 protected:
@@ -288,7 +288,7 @@ void TmuxViewer::toggleFullscreen() {
     close_btn->setVisible(false);
     is_fullscreen = false;
 
-    setTransform(QTransform());
+
   } else {
     showFullScreen();
     fullscreen_btn->setText("Exit Fullscreen");
