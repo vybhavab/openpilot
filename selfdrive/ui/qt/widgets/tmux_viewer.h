@@ -11,26 +11,6 @@
 #include <QThread>
 #include <QMutex>
 
-class TmuxCaptureThread : public QThread {
-  Q_OBJECT
-
-public:
-  TmuxCaptureThread(const QString &session_name, QObject *parent = nullptr);
-  void stop();
-
-signals:
-  void contentReady(const QString &content);
-
-protected:
-  void run() override;
-
-private:
-  QString session_name;
-  bool should_stop;
-  QMutex mutex;
-  QString runCommand(const QString &command);
-};
-
 class TmuxViewer : public QWidget {
   Q_OBJECT
 
@@ -64,7 +44,7 @@ private:
   QPushButton *close_btn;
   QTextEdit *terminal_display;
   
-  TmuxCaptureThread *capture_thread;
+  class TmuxCaptureWorker *capture_worker;
   
   QString current_session;
   bool connected;
