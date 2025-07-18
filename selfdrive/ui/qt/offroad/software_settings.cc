@@ -6,6 +6,9 @@
 
 #include <QDebug>
 #include <QLabel>
+#include <QDialog>
+#include <QVBoxLayout>
+#include <QTimer>
 
 #include "common/params.h"
 #include "common/util.h"
@@ -13,6 +16,7 @@
 #include "selfdrive/ui/qt/util.h"
 #include "selfdrive/ui/qt/widgets/controls.h"
 #include "selfdrive/ui/qt/widgets/input.h"
+#include "selfdrive/ui/qt/widgets/tmux_viewer.h"
 #include "system/hardware/hw.h"
 
 
@@ -73,6 +77,11 @@ SoftwarePanel::SoftwarePanel(QWidget* parent) : ListWidget(parent) {
   if (!params.getBool("IsTestedBranch")) {
     addItem(targetBranchBtn);
   }
+
+  // tmux viewer button
+  tmuxBtn = new ButtonControl(tr("Tmux Viewer"), tr("OPEN"));
+  connect(tmuxBtn, &ButtonControl::clicked, this, &SoftwarePanel::openTmuxViewer);
+  addItem(tmuxBtn);
 
   // uninstall button
   auto uninstallBtn = new ButtonControl(tr("Uninstall %1").arg(getBrand()), tr("UNINSTALL"));
@@ -153,4 +162,27 @@ void SoftwarePanel::updateLabels() {
   installBtn->setDescription(QString::fromStdString(params.get("UpdaterNewReleaseNotes")));
 
   update();
+}
+
+void SoftwarePanel::openTmuxViewer() {
+  QDialog *dialog = new QDialog(this);
+  dialog->setWindowTitle("Tmux Session Viewer");
+  dialog->setModal(true);
+  dialog->resize(1200, 800);
+  
+  QVBoxLayout *layout = new QVBoxLayout(dialog);
+  layout->setMargin(0);
+  
+  TmuxViewer *viewer = new TmuxViewer(dialog);
+  layout->addWidget(viewer);
+  
+  dialog->setLayout(layout);
+  
+  // Auto-connect to default session when dialog opens
+  QTimer::singleShot(500, [viewer]() {
+    viewer->connectToSession("default");
+  });
+  
+  dialog->exec();
+  delete dialog;
 }
