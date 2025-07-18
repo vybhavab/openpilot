@@ -19,6 +19,7 @@
 #endif
 
 #include "system/hardware/hw.h"
+#include "selfdrive/ui/qt/qt_window.h"
 
 class TmuxCaptureWorker : public QThread {
 public:
@@ -42,11 +43,10 @@ protected:
         if (should_stop) break;
       }
 
-      QString capture_cmd = QString("tmux capture-pane -t %1 -p").arg(session_name);
+      QString capture_cmd = QString("tmux capture-pane -t %1 -e -p").arg(session_name);
       QString content = runCommand(capture_cmd);
 
       if (!content.isEmpty() && callback) {
-        // Use QMetaObject::invokeMethod to safely call back to main thread
         QMetaObject::invokeMethod(parent(), [this, content]() {
           if (callback) callback(content);
         }, Qt::QueuedConnection);
@@ -141,7 +141,7 @@ void TmuxViewer::setupUI() {
 
   close_btn = new QPushButton("Close", this);
   close_btn->setStyleSheet(button_style);
-  close_btn->setVisible(false); // Only show in fullscreen
+  close_btn->setVisible(false);
   connect(close_btn, &QPushButton::clicked, this, &TmuxViewer::toggleFullscreen);
 
   control_layout->addWidget(status_label);
@@ -153,9 +153,9 @@ void TmuxViewer::setupUI() {
 
   main_layout->addLayout(control_layout);
 
-  // Terminal display
   terminal_display = new QTextEdit(this);
   terminal_display->setReadOnly(true);
+  terminal_display->setAcceptRichText(true);
   terminal_display->setStyleSheet(R"(
     QTextEdit {
       background-color: #1a1a1a;
@@ -173,6 +173,7 @@ void TmuxViewer::setupUI() {
   font.setStyleHint(QFont::TypeWriter);
   font.setWeight(QFont::Medium);
   terminal_display->setFont(font);
+  terminal_display->document()->setDefaultFont(font);
 
   main_layout->addWidget(terminal_display);
 
@@ -186,12 +187,10 @@ void TmuxViewer::connectToSession(const QString &session_name) {
 
   current_session = session_name;
 
-  // Check if tmux session exists, create if it doesn't
   QString check_cmd = QString("tmux has-session -t %1 2>/dev/null").arg(current_session);
   int result = std::system(check_cmd.toStdString().c_str());
 
   if (result != 0) {
-    // Session doesn't exist, create it
     QString create_cmd = QString("tmux new-session -d -s %1").arg(current_session);
     int create_result = std::system(create_cmd.toStdString().c_str());
 
@@ -273,6 +272,16 @@ void TmuxViewer::updateContent(const QString &content) {
   QScrollBar *scrollBar = terminal_display->verticalScrollBar();
   bool wasAtBottom = (scrollBar->value() == scrollBar->maximum());
 
+  terminal_display->setHtml(QString("<pre style='color: #E4E4E4; background: #1a1a1a; font-family: monospace;'>%1</pre>").arg(content.toHtmlEscaped()));
+
+  if (wasAtBottom) {
+    scrollBar->setValue(scrollBar->maximum());
+  }
+}
+
+  QScrollBar *scrollBar = terminal_display->verticalScrollBar();
+  bool wasAtBottom = (scrollBar->value() == scrollBar->maximum());
+
   terminal_display->setPlainText(content);
 
   if (wasAtBottom) {
@@ -287,8 +296,6 @@ void TmuxViewer::toggleFullscreen() {
     fullscreen_btn->setVisible(true);
     close_btn->setVisible(false);
     is_fullscreen = false;
-
-
   } else {
     showFullScreen();
     fullscreen_btn->setText("Exit Fullscreen");
@@ -296,17 +303,14 @@ void TmuxViewer::toggleFullscreen() {
     close_btn->setVisible(true);
     close_btn->setText("Exit Fullscreen");
     is_fullscreen = true;
+  }
 
-#ifdef QCOM2
-    if (!Hardware::PC()) {
-      QPlatformNativeInterface *native = QGuiApplication::platformNativeInterface();
-      if (native && windowHandle()) {
-        wl_surface *s = reinterpret_cast<wl_surface*>(
-            native->nativeResourceForWindow("surface", windowHandle()));
-        if (s) {
-          wl_surface_set_buffer_transform(s, WL_OUTPUT_TRANSFORM_270);
-          wl_surface_commit(s);
-        }
+  if (is_fullscreen) {
+    setAttribute(Qt::WA_AlwaysShowToolTips, true);
+  } else {
+    setAttribute(Qt::WA_AlwaysShowToolTips, false);
+  }
+}
       }
     }
 #endif

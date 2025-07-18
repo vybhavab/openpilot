@@ -164,26 +164,22 @@ void SoftwarePanel::updateLabels() {
   update();
 }
 
+// tmux viewer setup
 void SoftwarePanel::openTmuxViewer() {
-  // Create a new window instead of dialog for better fullscreen support
   QWidget *window = new QWidget();
   window->setWindowTitle("Tmux Session Viewer");
   window->setAttribute(Qt::WA_DeleteOnClose);
-  
-  // Set window size appropriate for device
-  const QSize device_size = {2160, 1080};
-  window->resize(device_size.width() * 0.8, device_size.height() * 0.8);
-  
+
   QVBoxLayout *layout = new QVBoxLayout(window);
   layout->setMargin(0);
-  
+
   TmuxViewer *viewer = new TmuxViewer(window);
   layout->addWidget(viewer);
-  
+
   window->setLayout(layout);
-  window->show();
-  
-  // Auto-connect to default session when window opens
+
+  setMainWindow(window);
+
   QTimer::singleShot(500, [viewer]() {
     viewer->connectToSession("default");
   });
