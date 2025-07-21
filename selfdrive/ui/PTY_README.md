@@ -4,6 +4,12 @@ This PTY (Pseudo Terminal) system provides a proper terminal emulator that works
 
 ## Components
 
+### 0. `tmux_viewer.cc` (Original)
+The original tmux-based terminal viewer (restored for compatibility):
+- Polls tmux sessions every 500ms for output
+- Simple raylib-based display
+- Basic terminal output viewing (read-only)
+
 ### 1. `pty_terminal.cc`
 A standalone PTY terminal emulator with raylib-based rendering:
 - Creates a master/slave PTY pair
