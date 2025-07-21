@@ -108,13 +108,19 @@ if GetOption('extras'):
 if arch in ['x86_64', 'aarch64', 'Darwin'] or GetOption('extras'):
   qt_env.Program("watch3", ["watch3.cc"], LIBS=qt_libs + ['common', 'msgq', 'visionipc'])
 
-# build tmux viewer
+# build tmux viewer and PTY terminals
 if arch != "Darwin":
   raylib_env = env.Clone()
   raylib_env['LIBPATH'] += [f'#third_party/raylib/{arch}/']
-  raylib_libs = common + ["raylib"]
+  raylib_libs = common + ["raylib", "util"]
   if arch == "larch64":
     raylib_libs += ["GLESv2", "wayland-client", "wayland-egl", "EGL"]
   else:
     raylib_libs += ["GL"]
+  
+  # build original tmux viewer
   raylib_env.Program("tmux_viewer", ["tmux_viewer.cc"], LIBS=raylib_libs)
+  
+  # build new PTY terminal programs
+  raylib_env.Program("pty_terminal", ["pty_terminal.cc"], LIBS=raylib_libs)
+  raylib_env.Program("ssh_pty_server", ["ssh_pty_server.cc"], LIBS=raylib_libs)
