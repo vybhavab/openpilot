@@ -5,7 +5,7 @@
 
 #include <vector>
 
-#include "selfdrive/common/params.h"
+#include "common/params.h"
 
 DeveloperPanel::DeveloperPanel(QWidget* parent) : ListWidget(parent) {
   showTerminalBtn = new ButtonControl("Show Terminal", "OPEN");
