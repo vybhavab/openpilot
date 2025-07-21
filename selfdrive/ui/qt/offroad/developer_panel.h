@@ -1,14 +1,16 @@
 #pragma once
 
 #include "selfdrive/ui/qt/offroad/settings.h"
+#include "selfdrive/ui/qt/widgets/controls.h"
 
 class DeveloperPanel : public ListWidget {
   Q_OBJECT
 public:
-  explicit DeveloperPanel(SettingsWindow *parent);
+  explicit DeveloperPanel(QWidget* parent = nullptr);
   void showEvent(QShowEvent *event) override;
 
 private:
+  ButtonControl *showTerminalBtn;
   Params params;
   ParamControl* adbToggle;
   ParamControl* joystickToggle;

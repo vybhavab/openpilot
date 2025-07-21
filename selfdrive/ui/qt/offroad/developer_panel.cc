@@ -1,8 +1,21 @@
 #include "selfdrive/ui/qt/offroad/developer_panel.h"
 #include "selfdrive/ui/qt/widgets/ssh_keys.h"
 #include "selfdrive/ui/qt/widgets/controls.h"
+#include "selfdrive/ui/qt/window.h"
 
-DeveloperPanel::DeveloperPanel(SettingsWindow *parent) : ListWidget(parent) {
+#include <vector>
+
+#include "selfdrive/common/params.h"
+
+DeveloperPanel::DeveloperPanel(QWidget* parent) : ListWidget(parent) {
+  showTerminalBtn = new ButtonControl("Show Terminal", "OPEN");
+  QObject::connect(showTerminalBtn, &ButtonControl::clicked, [=]() {
+    qobject_cast<MainWindow*>(parent->parent()->parent())->toggleTerminal();
+  });
+  addItem(showTerminalBtn);
+
+  addItem(new ParamControl("UseSI", "Use SI", "Use SI units", "", this));
+
   adbToggle = new ParamControl("AdbEnabled", tr("Enable ADB"),
             tr("ADB (Android Debug Bridge) allows connecting to your device over USB or over the network. See https://docs.comma.ai/how-to/connect-to-comma for more info."), "");
   addItem(adbToggle);
