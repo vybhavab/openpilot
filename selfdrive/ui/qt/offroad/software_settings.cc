@@ -16,7 +16,7 @@
 #include "selfdrive/ui/qt/util.h"
 #include "selfdrive/ui/qt/widgets/controls.h"
 #include "selfdrive/ui/qt/widgets/input.h"
-#include "selfdrive/ui/qt/widgets/tmux_viewer.h"
+
 #include "system/hardware/hw.h"
 
 
@@ -166,21 +166,5 @@ void SoftwarePanel::updateLabels() {
 
 // tmux viewer setup
 void SoftwarePanel::openTmuxViewer() {
-  QWidget *window = new QWidget();
-  window->setWindowTitle("Tmux Session Viewer");
-  window->setAttribute(Qt::WA_DeleteOnClose);
-
-  QVBoxLayout *layout = new QVBoxLayout(window);
-  layout->setMargin(0);
-
-  TmuxViewer *viewer = new TmuxViewer(window);
-  layout->addWidget(viewer);
-
-  window->setLayout(layout);
-
-  setMainWindow(window);
-
-  QTimer::singleShot(500, [viewer]() {
-    viewer->connectToSession("default");
-  });
+  std::system("/data/openpilot/selfdrive/ui/tmux_viewer &");
 }
