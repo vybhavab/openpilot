@@ -180,8 +180,14 @@ public:
             setsid();
 
             char *slave_name = ptsname(master_fd);
+            if (slave_name == nullptr) {
+                LOGE("Failed to get slave PTY name");
+                exit(1);
+            }
+            
             int slave_fd = open(slave_name, O_RDWR);
             if (slave_fd == -1) {
+                LOGE("Failed to open slave PTY: %s", strerror(errno));
                 exit(1);
             }
 
@@ -262,9 +268,18 @@ public:
     }
 
     void cleanup_client() {
+        client_connected = false;
+        
         if (client_socket != -1) {
             close(client_socket);
             client_socket = -1;
+        }
+
+        if (child_pid > 0) {
+            kill(child_pid, SIGTERM);
+            int status;
+            waitpid(child_pid, &status, WNOHANG);
+            child_pid = -1;
         }
 
         if (master_fd != -1) {
@@ -272,13 +287,6 @@ public:
             master_fd = -1;
         }
 
-        if (child_pid > 0) {
-            kill(child_pid, SIGTERM);
-            waitpid(child_pid, nullptr, 0);
-            child_pid = -1;
-        }
-
-        client_connected = false;
         clear_screen();
 
         LOG("Client disconnected");
@@ -286,6 +294,8 @@ public:
 
     void stop() {
         running = false;
+
+        cleanup_client();
 
         if (server_thread.joinable()) {
             server_thread.join();
@@ -295,15 +305,18 @@ public:
             pty_thread.join();
         }
 
-        cleanup_client();
-
         if (server_socket != -1) {
             close(server_socket);
+            server_socket = -1;
         }
     }
 
     void clear_screen() {
         std::lock_guard<std::mutex> lock(screen_mutex);
+        if (screen.empty()) {
+            return;
+        }
+        
         for (auto& row : screen) {
             for (auto& cell : row) {
                 cell.ch = ' ';
@@ -360,15 +373,24 @@ public:
     }
 
     void scroll_up() {
-        for (int i = 0; i < ROWS - 1; i++) {
-            screen[i] = screen[i + 1];
+        if (screen.empty() || screen.size() < ROWS) {
+            return;
         }
-        for (auto& cell : screen[ROWS - 1]) {
-            cell.ch = ' ';
-            cell.fg_color = WHITE;
-            cell.bg_color = BLACK;
-            cell.bold = false;
-            cell.underline = false;
+        
+        for (int i = 0; i < ROWS - 1; i++) {
+            if (i + 1 < static_cast<int>(screen.size())) {
+                screen[i] = screen[i + 1];
+            }
+        }
+        
+        if (ROWS - 1 < static_cast<int>(screen.size())) {
+            for (auto& cell : screen[ROWS - 1]) {
+                cell.ch = ' ';
+                cell.fg_color = WHITE;
+                cell.bg_color = BLACK;
+                cell.bold = false;
+                cell.underline = false;
+            }
         }
     }
 
@@ -416,9 +438,9 @@ public:
                     break;
                 case 'J':
                     if (nums.empty() || nums[0] == 0) {
-                        for (int r = cursor_row; r < ROWS; r++) {
+                        for (int r = cursor_row; r < ROWS && r < static_cast<int>(screen.size()); r++) {
                             int start_col = (r == cursor_row) ? cursor_col : 0;
-                            for (int c = start_col; c < COLS; c++) {
+                            for (int c = start_col; c < COLS && c < static_cast<int>(screen[r].size()); c++) {
                                 screen[r][c] = {' ', WHITE, BLACK, false, false};
                             }
                         }
@@ -427,8 +449,8 @@ public:
                     }
                     break;
                 case 'K':
-                    if (nums.empty() || nums[0] == 0) {
-                        for (int c = cursor_col; c < COLS; c++) {
+                    if ((nums.empty() || nums[0] == 0) && cursor_row >= 0 && cursor_row < static_cast<int>(screen.size())) {
+                        for (int c = cursor_col; c < COLS && c < static_cast<int>(screen[cursor_row].size()); c++) {
                             screen[cursor_row][c] = {' ', WHITE, BLACK, false, false};
                         }
                     }
@@ -492,8 +514,21 @@ public:
     void render(Font& font) {
         std::lock_guard<std::mutex> lock(screen_mutex);
 
+        // Validate screen dimensions
+        if (screen.empty() || screen.size() != ROWS) {
+            return;
+        }
+
         for (int row = 0; row < ROWS; row++) {
+            if (row >= static_cast<int>(screen.size()) || screen[row].size() != COLS) {
+                continue;
+            }
+            
             for (int col = 0; col < COLS; col++) {
+                if (col >= static_cast<int>(screen[row].size())) {
+                    continue;
+                }
+                
                 const auto& cell = screen[row][col];
 
                 int x = col * CHAR_WIDTH;
@@ -521,7 +556,7 @@ public:
             }
         }
 
-        if (client_connected) {
+        if (client_connected && cursor_row >= 0 && cursor_row < ROWS && cursor_col >= 0 && cursor_col < COLS) {
             int cursor_x = cursor_col * CHAR_WIDTH;
             int cursor_y = 80 + cursor_row * CHAR_HEIGHT;
             DrawRectangle(cursor_x, cursor_y, 2, CHAR_HEIGHT, WHITE);
