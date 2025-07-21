@@ -25,6 +25,7 @@
 #include "third_party/raylib/include/raylib.h"
 #include "common/swaglog.h"
 #include "common/util.h"
+#include "system/hardware/hw.h"
 
 const int SCREEN_WIDTH = 2160;
 const int SCREEN_HEIGHT = 1080;
@@ -527,12 +528,48 @@ int main() {
         CloseWindow();
         return 1;
     }
+    
+    // Keep display on
+    try {
+        Hardware::set_display_power(true);
+    } catch (...) {
+        // Fallback for systems without hardware interface
+        LOG("Hardware interface not available, using fallback");
+    }
 
     while (!WindowShouldClose() && server.is_running()) {
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        // Handle touch input and keep display active
+        bool touch_detected = false;
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            touch_detected = true;
             Vector2 mousePos = GetMousePosition();
-            if (mousePos.y < 50) {
+            if (mousePos.y < 50 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
                 break;
+            }
+        }
+        
+        // Keep display active when there's client activity or touch
+        static auto last_activity = std::chrono::steady_clock::now();
+        if (touch_detected || server.has_client()) {
+            last_activity = std::chrono::steady_clock::now();
+            try {
+                Hardware::set_display_power(true);
+            } catch (...) {
+                // Fallback - just continue without hardware control
+            }
+        }
+        
+        // Refresh display power every 30 seconds to prevent sleep
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_activity).count() < 300) {
+            static auto last_refresh = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - last_refresh).count() > 30) {
+                try {
+                    Hardware::set_display_power(true);
+                } catch (...) {
+                    // Fallback - just continue without hardware control
+                }
+                last_refresh = now;
             }
         }
 
