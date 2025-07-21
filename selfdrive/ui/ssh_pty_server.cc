@@ -102,7 +102,7 @@ public:
             return false;
         }
         
-        LOGI("SSH PTY Server listening on port %d", SSH_PORT);
+        LOG("SSH PTY Server listening on port %d", SSH_PORT);
         
         server_thread = std::thread(&SSHPTYServer::accept_connections, this);
         return true;
@@ -133,7 +133,7 @@ public:
                     client_socket = new_client;
                     client_connected = true;
                     
-                    LOGI("Client connected from %s", inet_ntoa(client_addr.sin_addr));
+                    LOG("Client connected from %s", inet_ntoa(client_addr.sin_addr));
                     
                     if (start_pty()) {
                         pty_thread = std::thread(&SSHPTYServer::handle_pty_io, this);
@@ -257,7 +257,7 @@ public:
         client_connected = false;
         clear_screen();
         
-        LOGI("Client disconnected");
+        LOG("Client disconnected");
     }
     
     void stop() {
