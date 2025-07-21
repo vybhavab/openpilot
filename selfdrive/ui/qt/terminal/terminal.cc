@@ -1,6 +1,10 @@
 #include "selfdrive/ui/qt/terminal/terminal.h"
 
 #include <QVBoxLayout>
+#include <pty.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <poll.h>
 
 Terminal::Terminal(QWidget *parent) : QWidget(parent) {
   QVBoxLayout *layout = new QVBoxLayout(this);
@@ -18,31 +22,52 @@ Terminal::Terminal(QWidget *parent) : QWidget(parent) {
   )");
   layout->addWidget(output);
 
-  process = new QProcess(this);
-  connect(process, &QProcess::readyReadStandardOutput, this, &Terminal::handleReadyReadStandardOutput);
-  connect(process, &QProcess::readyReadStandardError, this, &Terminal::handleReadyReadStandardError);
-  connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &Terminal::handleProcessFinished);
-
-  startShell();
-}
-
-void Terminal::startShell() {
-  if (process->state() == QProcess::NotRunning) {
-    process->start("/bin/sh");
+  if (!startPty()) {
+    write("Failed to start PTY\n");
   }
 }
 
-void Terminal::handleReadyReadStandardOutput() {
-  write(process->readAllStandardOutput());
+Terminal::~Terminal() {
+  if (child_pid > 0) {
+    kill(child_pid, SIGTERM);
+    waitpid(child_pid, NULL, 0);
+  }
+  if (master_fd != -1) {
+    close(master_fd);
+  }
 }
 
-void Terminal::handleReadyReadStandardError() {
-  write(process->readAllStandardError());
+bool Terminal::startPty() {
+  char pts_name[256];
+  child_pid = forkpty(&master_fd, pts_name, NULL, NULL);
+
+  if (child_pid < 0) {
+    return false;
+  } else if (child_pid == 0) {
+    // Child process
+    if (execlp("/bin/sh", "/bin/sh", NULL) < 0) {
+      perror("execlp failed");
+      _exit(1);
+    }
+  } else {
+    // Parent process
+    write(QString("PTY started: %1\n").arg(pts_name).toUtf8());
+    notifier = new QSocketNotifier(master_fd, QSocketNotifier::Read, this);
+    connect(notifier, &QSocketNotifier::activated, this, &Terminal::readData);
+  }
+  return true;
 }
 
-void Terminal::handleProcessFinished(int exitCode, QProcess::ExitStatus exitStatus) {
-  QString status_str = (exitStatus == QProcess::NormalExit) ? "normally" : "crashed";
-  write(QString("\n[process terminated %1 with exit code %2]").arg(status_str, QString::number(exitCode)).toUtf8());
+void Terminal::readData() {
+  char buf[4096];
+  ssize_t n = read(master_fd, buf, sizeof(buf));
+  if (n > 0) {
+    write(QByteArray(buf, n));
+  } else {
+    // PTY closed
+    notifier->setEnabled(false);
+    write("\n[process terminated]");
+  }
 }
 
 void Terminal::write(const QByteArray &data) {

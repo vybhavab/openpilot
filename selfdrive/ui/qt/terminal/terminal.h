@@ -2,23 +2,24 @@
 
 #include <QWidget>
 #include <QPlainTextEdit>
-#include <QProcess>
+#include <QSocketNotifier>
 
 class Terminal : public QWidget {
   Q_OBJECT
 
 public:
   explicit Terminal(QWidget *parent = nullptr);
+  ~Terminal();
 
 private slots:
-  void handleReadyReadStandardOutput();
-  void handleReadyReadStandardError();
-  void handleProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
+  void readData();
 
 private:
-  void startShell();
+  bool startPty();
   void write(const QByteArray &data);
 
   QPlainTextEdit *output;
-  QProcess *process;
+  int master_fd = -1;
+  pid_t child_pid = -1;
+  QSocketNotifier *notifier = nullptr;
 };
