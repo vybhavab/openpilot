@@ -17,6 +17,7 @@
 #endif
 #include <signal.h>
 #include <sys/wait.h>
+#include <errno.h>
 
 #include "third_party/raylib/include/raylib.h"
 #include "common/swaglog.h"
@@ -46,73 +47,73 @@ private:
     bool running;
     std::mutex screen_mutex;
     std::thread read_thread;
-    
+
     Color current_fg = WHITE;
     Color current_bg = BLACK;
     bool current_bold = false;
     bool current_underline = false;
-    
+
     std::string escape_buffer;
     bool in_escape = false;
 
 public:
-    PTYTerminal() : cursor_row(0), cursor_col(0), running(true) {
+    PTYTerminal() : cursor_row(0), cursor_col(0), running(true), master_fd(-1), child_pid(-1) {
         screen.resize(ROWS, std::vector<TerminalCell>(COLS));
         clear_screen();
     }
-    
+
     ~PTYTerminal() {
         stop();
     }
-    
+
     bool start_shell() {
         struct winsize ws;
         ws.ws_row = ROWS;
         ws.ws_col = COLS;
         ws.ws_xpixel = SCREEN_WIDTH;
         ws.ws_ypixel = SCREEN_HEIGHT;
-        
+
         if (openpty(&master_fd, nullptr, nullptr, nullptr, &ws) == -1) {
             LOGE("Failed to create PTY");
             return false;
         }
-        
+
         child_pid = fork();
         if (child_pid == -1) {
             LOGE("Failed to fork");
             close(master_fd);
             return false;
         }
-        
+
         if (child_pid == 0) {
             setsid();
-            
+
             char *slave_name = ptsname(master_fd);
             int slave_fd = open(slave_name, O_RDWR);
             if (slave_fd == -1) {
                 exit(1);
             }
-            
+
             dup2(slave_fd, STDIN_FILENO);
             dup2(slave_fd, STDOUT_FILENO);
             dup2(slave_fd, STDERR_FILENO);
             close(slave_fd);
             close(master_fd);
-            
+
             setenv("TERM", "xterm-256color", 1);
             setenv("COLUMNS", std::to_string(COLS).c_str(), 1);
             setenv("LINES", std::to_string(ROWS).c_str(), 1);
-            
+
             execl("/bin/bash", "bash", "-l", nullptr);
             exit(1);
         }
-        
+
         fcntl(master_fd, F_SETFL, O_NONBLOCK);
         read_thread = std::thread(&PTYTerminal::read_from_pty, this);
-        
+
         return true;
     }
-    
+
     void stop() {
         running = false;
         if (read_thread.joinable()) {
@@ -126,13 +127,16 @@ public:
             waitpid(child_pid, nullptr, 0);
         }
     }
-    
+
     void write_to_pty(const std::string& data) {
-        if (master_fd >= 0) {
-            write(master_fd, data.c_str(), data.length());
+        if (master_fd >= 0 && !data.empty()) {
+            ssize_t written = write(master_fd, data.c_str(), data.length());
+            if (written < 0) {
+                LOGE("Failed to write to PTY: %s", strerror(errno));
+            }
         }
     }
-    
+
     void clear_screen() {
         std::lock_guard<std::mutex> lock(screen_mutex);
         for (auto& row : screen) {
@@ -146,10 +150,10 @@ public:
         }
         cursor_row = cursor_col = 0;
     }
-    
+
     void put_char(char ch) {
         std::lock_guard<std::mutex> lock(screen_mutex);
-        
+
         if (ch == '\n') {
             cursor_col = 0;
             cursor_row++;
@@ -180,14 +184,16 @@ public:
                     cursor_row = ROWS - 1;
                 }
             }
-            
-            screen[cursor_row][cursor_col] = {
-                ch, current_fg, current_bg, current_bold, current_underline
-            };
-            cursor_col++;
+
+            if (cursor_row >= 0 && cursor_row < ROWS && cursor_col >= 0 && cursor_col < COLS) {
+                screen[cursor_row][cursor_col] = {
+                    ch, current_fg, current_bg, current_bold, current_underline
+                };
+                cursor_col++;
+            }
         }
     }
-    
+
     void scroll_up() {
         for (int i = 0; i < ROWS - 1; i++) {
             screen[i] = screen[i + 1];
@@ -200,15 +206,15 @@ public:
             cell.underline = false;
         }
     }
-    
+
     void process_escape_sequence(const std::string& seq) {
         if (seq.empty()) return;
-        
+
         if (seq[0] == '[') {
             std::string params = seq.substr(1);
             char cmd = params.back();
             params.pop_back();
-            
+
             std::vector<int> nums;
             std::string current_num;
             for (char c : params) {
@@ -222,43 +228,73 @@ public:
             if (!current_num.empty()) {
                 nums.push_back(std::stoi(current_num));
             }
-            
+
             switch (cmd) {
                 case 'H':
                 case 'f':
-                    cursor_row = (nums.size() > 0 ? nums[0] - 1 : 0);
-                    cursor_col = (nums.size() > 1 ? nums[1] - 1 : 0);
-                    cursor_row = std::max(0, std::min(cursor_row, ROWS - 1));
-                    cursor_col = std::max(0, std::min(cursor_col, COLS - 1));
+                    {
+                        std::lock_guard<std::mutex> lock(screen_mutex);
+                        cursor_row = (nums.size() > 0 ? nums[0] - 1 : 0);
+                        cursor_col = (nums.size() > 1 ? nums[1] - 1 : 0);
+                        cursor_row = std::max(0, std::min(cursor_row, ROWS - 1));
+                        cursor_col = std::max(0, std::min(cursor_col, COLS - 1));
+                    }
                     break;
                 case 'A':
-                    cursor_row = std::max(0, cursor_row - (nums.empty() ? 1 : nums[0]));
+                    {
+                        std::lock_guard<std::mutex> lock(screen_mutex);
+                        cursor_row = std::max(0, cursor_row - (nums.empty() ? 1 : nums[0]));
+                    }
                     break;
                 case 'B':
-                    cursor_row = std::min(ROWS - 1, cursor_row + (nums.empty() ? 1 : nums[0]));
+                    {
+                        std::lock_guard<std::mutex> lock(screen_mutex);
+                        cursor_row = std::min(ROWS - 1, cursor_row + (nums.empty() ? 1 : nums[0]));
+                    }
                     break;
                 case 'C':
-                    cursor_col = std::min(COLS - 1, cursor_col + (nums.empty() ? 1 : nums[0]));
+                    {
+                        std::lock_guard<std::mutex> lock(screen_mutex);
+                        cursor_col = std::min(COLS - 1, cursor_col + (nums.empty() ? 1 : nums[0]));
+                    }
                     break;
                 case 'D':
-                    cursor_col = std::max(0, cursor_col - (nums.empty() ? 1 : nums[0]));
+                    {
+                        std::lock_guard<std::mutex> lock(screen_mutex);
+                        cursor_col = std::max(0, cursor_col - (nums.empty() ? 1 : nums[0]));
+                    }
                     break;
                 case 'J':
-                    if (nums.empty() || nums[0] == 0) {
-                        for (int r = cursor_row; r < ROWS; r++) {
-                            int start_col = (r == cursor_row) ? cursor_col : 0;
-                            for (int c = start_col; c < COLS; c++) {
-                                screen[r][c] = {' ', WHITE, BLACK, false, false};
+                    {
+                        std::lock_guard<std::mutex> lock(screen_mutex);
+                        if (nums.empty() || nums[0] == 0) {
+                            for (int r = cursor_row; r < ROWS; r++) {
+                                int start_col = (r == cursor_row) ? cursor_col : 0;
+                                for (int c = start_col; c < COLS; c++) {
+                                    if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
+                                        screen[r][c] = {' ', WHITE, BLACK, false, false};
+                                    }
+                                }
                             }
+                        } else if (nums[0] == 2) {
+                            for (auto& row : screen) {
+                                for (auto& cell : row) {
+                                    cell = {' ', WHITE, BLACK, false, false};
+                                }
+                            }
+                            cursor_row = cursor_col = 0;
                         }
-                    } else if (nums[0] == 2) {
-                        clear_screen();
                     }
                     break;
                 case 'K':
-                    if (nums.empty() || nums[0] == 0) {
-                        for (int c = cursor_col; c < COLS; c++) {
-                            screen[cursor_row][c] = {' ', WHITE, BLACK, false, false};
+                    {
+                        std::lock_guard<std::mutex> lock(screen_mutex);
+                        if (nums.empty() || nums[0] == 0) {
+                            for (int c = cursor_col; c < COLS; c++) {
+                                if (cursor_row >= 0 && cursor_row < ROWS && c >= 0 && c < COLS) {
+                                    screen[cursor_row][c] = {' ', WHITE, BLACK, false, false};
+                                }
+                            }
                         }
                     }
                     break;
@@ -299,19 +335,19 @@ public:
             }
         }
     }
-    
+
     void read_from_pty() {
         char buffer[4096];
-        
+
         while (running) {
             fd_set read_fds;
             FD_ZERO(&read_fds);
             FD_SET(master_fd, &read_fds);
-            
+
             struct timeval timeout;
             timeout.tv_sec = 0;
             timeout.tv_usec = 50000;
-            
+
             int result = select(master_fd + 1, &read_fds, nullptr, nullptr, &timeout);
             if (result > 0 && FD_ISSET(master_fd, &read_fds)) {
                 ssize_t bytes_read = read(master_fd, buffer, sizeof(buffer) - 1);
@@ -325,7 +361,7 @@ public:
             }
         }
     }
-    
+
     void process_output(const std::string& data) {
         for (char ch : data) {
             if (ch == '\033') {
@@ -343,44 +379,46 @@ public:
             }
         }
     }
-    
+
     void render(Font& font) {
         std::lock_guard<std::mutex> lock(screen_mutex);
-        
-        for (int row = 0; row < ROWS; row++) {
-            for (int col = 0; col < COLS; col++) {
+
+        for (int row = 0; row < ROWS && row < (int)screen.size(); row++) {
+            for (int col = 0; col < COLS && col < (int)screen[row].size(); col++) {
                 const auto& cell = screen[row][col];
-                
+
                 int x = col * CHAR_WIDTH;
                 int y = 50 + row * CHAR_HEIGHT;
-                
+
                 if (cell.bg_color.r != 0 || cell.bg_color.g != 0 || cell.bg_color.b != 0) {
                     DrawRectangle(x, y, CHAR_WIDTH, CHAR_HEIGHT, cell.bg_color);
                 }
-                
-                if (cell.ch != ' ') {
+
+                if (cell.ch != ' ' && cell.ch != '\0') {
                     Color text_color = cell.fg_color;
                     if (cell.bold) {
                         text_color.r = std::min(255, (int)(text_color.r * 1.3));
                         text_color.g = std::min(255, (int)(text_color.g * 1.3));
                         text_color.b = std::min(255, (int)(text_color.b * 1.3));
                     }
-                    
+
                     char str[2] = {cell.ch, '\0'};
                     DrawTextEx(font, str, {(float)x, (float)y}, 16, 1, text_color);
-                    
+
                     if (cell.underline) {
                         DrawLine(x, y + CHAR_HEIGHT - 2, x + CHAR_WIDTH, y + CHAR_HEIGHT - 2, text_color);
                     }
                 }
             }
         }
-        
-        int cursor_x = cursor_col * CHAR_WIDTH;
-        int cursor_y = 50 + cursor_row * CHAR_HEIGHT;
-        DrawRectangle(cursor_x, cursor_y, 2, CHAR_HEIGHT, WHITE);
+
+        if (cursor_row >= 0 && cursor_row < ROWS && cursor_col >= 0 && cursor_col < COLS) {
+            int cursor_x = cursor_col * CHAR_WIDTH;
+            int cursor_y = 50 + cursor_row * CHAR_HEIGHT;
+            DrawRectangle(cursor_x, cursor_y, 2, CHAR_HEIGHT, WHITE);
+        }
     }
-    
+
     bool is_running() const { return running; }
 };
 
@@ -390,19 +428,19 @@ extern const uint8_t inter_ttf_end[] asm("_binary_selfdrive_ui_installer_inter_a
 int main() {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "PTY Terminal");
     SetTargetFPS(60);
-    
+
     Font font = LoadFontFromMemory(".ttf", inter_ttf, inter_ttf_end - inter_ttf, 120, NULL, 0);
     if (font.texture.id == 0) {
         font = GetFontDefault();
     }
-    
+
     PTYTerminal terminal;
     if (!terminal.start_shell()) {
         LOGE("Failed to start shell");
         CloseWindow();
         return 1;
     }
-    
+
     while (!WindowShouldClose() && terminal.is_running()) {
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             Vector2 mousePos = GetMousePosition();
@@ -410,19 +448,20 @@ int main() {
                 break;
             }
         }
-        
+
         int key = GetCharPressed();
         while (key > 0) {
             if (key >= 32 && key <= 126) {
-                terminal.write_to_pty(std::string(1, (char)key));
+                char ch = (char)key;
+                terminal.write_to_pty(std::string(1, ch));
             }
             key = GetCharPressed();
         }
-        
+
         if (IsKeyPressed(KEY_ENTER)) {
-            terminal.write_to_pty("\n");
+            terminal.write_to_pty("\r");
         } else if (IsKeyPressed(KEY_BACKSPACE)) {
-            terminal.write_to_pty("\b");
+            terminal.write_to_pty("\x7f");
         } else if (IsKeyPressed(KEY_TAB)) {
             terminal.write_to_pty("\t");
         } else if (IsKeyPressed(KEY_UP)) {
@@ -438,19 +477,19 @@ int main() {
         } else if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_D)) {
             terminal.write_to_pty("\004");
         }
-        
+
         BeginDrawing();
         ClearBackground(BLACK);
-        
+
         DrawTextEx(font, "PTY Terminal - Touch top area to exit", {20, 10}, 20, 1, WHITE);
-        
+
         terminal.render(font);
-        
+
         EndDrawing();
     }
-    
+
     terminal.stop();
     CloseWindow();
-    
+
     return 0;
 }

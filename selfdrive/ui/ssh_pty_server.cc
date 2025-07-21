@@ -20,6 +20,7 @@
 #endif
 #include <signal.h>
 #include <sys/wait.h>
+#include <errno.h>
 
 #include "third_party/raylib/include/raylib.h"
 #include "common/swaglog.h"
@@ -54,12 +55,12 @@ private:
     std::mutex screen_mutex;
     std::thread server_thread;
     std::thread pty_thread;
-    
+
     Color current_fg = WHITE;
     Color current_bg = BLACK;
     bool current_bold = false;
     bool current_underline = false;
-    
+
     std::string escape_buffer;
     bool in_escape = false;
 
@@ -69,72 +70,72 @@ public:
         screen.resize(ROWS, std::vector<TerminalCell>(COLS));
         clear_screen();
     }
-    
+
     ~SSHPTYServer() {
         stop();
     }
-    
+
     bool start_server() {
         server_socket = socket(AF_INET, SOCK_STREAM, 0);
         if (server_socket == -1) {
             LOGE("Failed to create socket");
             return false;
         }
-        
+
         int opt = 1;
         setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-        
+
         struct sockaddr_in server_addr;
         memset(&server_addr, 0, sizeof(server_addr));
         server_addr.sin_family = AF_INET;
         server_addr.sin_addr.s_addr = INADDR_ANY;
         server_addr.sin_port = htons(SSH_PORT);
-        
+
         if (bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
             LOGE("Failed to bind socket");
             close(server_socket);
             return false;
         }
-        
+
         if (listen(server_socket, 1) == -1) {
             LOGE("Failed to listen on socket");
             close(server_socket);
             return false;
         }
-        
+
         LOG("SSH PTY Server listening on port %d", SSH_PORT);
-        
+
         server_thread = std::thread(&SSHPTYServer::accept_connections, this);
         return true;
     }
-    
+
     void accept_connections() {
         while (running) {
             fd_set read_fds;
             FD_ZERO(&read_fds);
             FD_SET(server_socket, &read_fds);
-            
+
             struct timeval timeout;
             timeout.tv_sec = 1;
             timeout.tv_usec = 0;
-            
+
             int result = select(server_socket + 1, &read_fds, nullptr, nullptr, &timeout);
             if (result > 0 && FD_ISSET(server_socket, &read_fds)) {
                 struct sockaddr_in client_addr;
                 socklen_t client_len = sizeof(client_addr);
-                
+
                 int new_client = accept(server_socket, (struct sockaddr*)&client_addr, &client_len);
                 if (new_client != -1) {
                     if (client_connected) {
                         close(new_client);
                         continue;
                     }
-                    
+
                     client_socket = new_client;
                     client_connected = true;
-                    
+
                     LOG("Client connected from %s", inet_ntoa(client_addr.sin_addr));
-                    
+
                     if (start_pty()) {
                         pty_thread = std::thread(&SSHPTYServer::handle_pty_io, this);
                     } else {
@@ -145,70 +146,70 @@ public:
             }
         }
     }
-    
+
     bool start_pty() {
         struct winsize ws;
         ws.ws_row = ROWS;
         ws.ws_col = COLS;
         ws.ws_xpixel = SCREEN_WIDTH;
         ws.ws_ypixel = SCREEN_HEIGHT;
-        
+
         if (openpty(&master_fd, nullptr, nullptr, nullptr, &ws) == -1) {
             LOGE("Failed to create PTY");
             return false;
         }
-        
+
         child_pid = fork();
         if (child_pid == -1) {
             LOGE("Failed to fork");
             close(master_fd);
             return false;
         }
-        
+
         if (child_pid == 0) {
             setsid();
-            
+
             char *slave_name = ptsname(master_fd);
             int slave_fd = open(slave_name, O_RDWR);
             if (slave_fd == -1) {
                 exit(1);
             }
-            
+
             dup2(slave_fd, STDIN_FILENO);
             dup2(slave_fd, STDOUT_FILENO);
             dup2(slave_fd, STDERR_FILENO);
             close(slave_fd);
             close(master_fd);
-            
+
             setenv("TERM", "xterm-256color", 1);
             setenv("COLUMNS", std::to_string(COLS).c_str(), 1);
             setenv("LINES", std::to_string(ROWS).c_str(), 1);
-            
+
             execl("/bin/bash", "bash", "-l", nullptr);
             exit(1);
         }
-        
+
         fcntl(master_fd, F_SETFL, O_NONBLOCK);
         fcntl(client_socket, F_SETFL, O_NONBLOCK);
-        
+
         return true;
     }
-    
+
     void handle_pty_io() {
         char buffer[4096];
-        
+
         while (running && client_connected) {
             fd_set read_fds;
             FD_ZERO(&read_fds);
             FD_SET(master_fd, &read_fds);
             FD_SET(client_socket, &read_fds);
-            
+
             int max_fd = std::max(master_fd, client_socket);
-            
+
             struct timeval timeout;
             timeout.tv_sec = 0;
             timeout.tv_usec = 50000;
-            
+
             int result = select(max_fd + 1, &read_fds, nullptr, nullptr, &timeout);
             if (result > 0) {
                 if (FD_ISSET(master_fd, &read_fds)) {
@@ -216,13 +217,13 @@ public:
                     if (bytes_read > 0) {
                         buffer[bytes_read] = '\0';
                         process_output(std::string(buffer, bytes_read));
-                        
+
                         send(client_socket, buffer, bytes_read, MSG_NOSIGNAL);
                     } else if (bytes_read == 0) {
                         break;
                     }
                 }
-                
+
                 if (FD_ISSET(client_socket, &read_fds)) {
                     ssize_t bytes_read = read(client_socket, buffer, sizeof(buffer));
                     if (bytes_read > 0) {
@@ -233,51 +234,51 @@ public:
                 }
             }
         }
-        
+
         cleanup_client();
     }
-    
+
     void cleanup_client() {
         if (client_socket != -1) {
             close(client_socket);
             client_socket = -1;
         }
-        
+
         if (master_fd != -1) {
             close(master_fd);
             master_fd = -1;
         }
-        
+
         if (child_pid > 0) {
             kill(child_pid, SIGTERM);
             waitpid(child_pid, nullptr, 0);
             child_pid = -1;
         }
-        
+
         client_connected = false;
         clear_screen();
-        
+
         LOG("Client disconnected");
     }
-    
+
     void stop() {
         running = false;
-        
+
         if (server_thread.joinable()) {
             server_thread.join();
         }
-        
+
         if (pty_thread.joinable()) {
             pty_thread.join();
         }
-        
+
         cleanup_client();
-        
+
         if (server_socket != -1) {
             close(server_socket);
         }
     }
-    
+
     void clear_screen() {
         std::lock_guard<std::mutex> lock(screen_mutex);
         for (auto& row : screen) {
@@ -291,10 +292,10 @@ public:
         }
         cursor_row = cursor_col = 0;
     }
-    
+
     void put_char(char ch) {
         std::lock_guard<std::mutex> lock(screen_mutex);
-        
+
         if (ch == '\n') {
             cursor_col = 0;
             cursor_row++;
@@ -325,14 +326,16 @@ public:
                     cursor_row = ROWS - 1;
                 }
             }
-            
-            screen[cursor_row][cursor_col] = {
-                ch, current_fg, current_bg, current_bold, current_underline
-            };
-            cursor_col++;
+
+            if (cursor_row >= 0 && cursor_row < ROWS && cursor_col >= 0 && cursor_col < COLS) {
+                screen[cursor_row][cursor_col] = {
+                    ch, current_fg, current_bg, current_bold, current_underline
+                };
+                cursor_col++;
+            }
         }
     }
-    
+
     void scroll_up() {
         for (int i = 0; i < ROWS - 1; i++) {
             screen[i] = screen[i + 1];
@@ -345,15 +348,15 @@ public:
             cell.underline = false;
         }
     }
-    
+
     void process_escape_sequence(const std::string& seq) {
         if (seq.empty()) return;
-        
+
         if (seq[0] == '[') {
             std::string params = seq.substr(1);
             char cmd = params.back();
             params.pop_back();
-            
+
             std::vector<int> nums;
             std::string current_num;
             for (char c : params) {
@@ -367,7 +370,7 @@ public:
             if (!current_num.empty()) {
                 nums.push_back(std::stoi(current_num));
             }
-            
+
             switch (cmd) {
                 case 'H':
                 case 'f':
@@ -444,7 +447,7 @@ public:
             }
         }
     }
-    
+
     void process_output(const std::string& data) {
         for (char ch : data) {
             if (ch == '\033') {
@@ -462,21 +465,21 @@ public:
             }
         }
     }
-    
+
     void render(Font& font) {
         std::lock_guard<std::mutex> lock(screen_mutex);
-        
+
         for (int row = 0; row < ROWS; row++) {
             for (int col = 0; col < COLS; col++) {
                 const auto& cell = screen[row][col];
-                
+
                 int x = col * CHAR_WIDTH;
                 int y = 80 + row * CHAR_HEIGHT;
-                
+
                 if (cell.bg_color.r != 0 || cell.bg_color.g != 0 || cell.bg_color.b != 0) {
                     DrawRectangle(x, y, CHAR_WIDTH, CHAR_HEIGHT, cell.bg_color);
                 }
-                
+
                 if (cell.ch != ' ') {
                     Color text_color = cell.fg_color;
                     if (cell.bold) {
@@ -484,24 +487,24 @@ public:
                         text_color.g = std::min(255, (int)(text_color.g * 1.3));
                         text_color.b = std::min(255, (int)(text_color.b * 1.3));
                     }
-                    
+
                     char str[2] = {cell.ch, '\0'};
                     DrawTextEx(font, str, {(float)x, (float)y}, 16, 1, text_color);
-                    
+
                     if (cell.underline) {
                         DrawLine(x, y + CHAR_HEIGHT - 2, x + CHAR_WIDTH, y + CHAR_HEIGHT - 2, text_color);
                     }
                 }
             }
         }
-        
+
         if (client_connected) {
             int cursor_x = cursor_col * CHAR_WIDTH;
             int cursor_y = 80 + cursor_row * CHAR_HEIGHT;
             DrawRectangle(cursor_x, cursor_y, 2, CHAR_HEIGHT, WHITE);
         }
     }
-    
+
     bool is_running() const { return running; }
     bool has_client() const { return client_connected; }
 };
@@ -512,19 +515,19 @@ extern const uint8_t inter_ttf_end[] asm("_binary_selfdrive_ui_installer_inter_a
 int main() {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "SSH PTY Server");
     SetTargetFPS(60);
-    
+
     Font font = LoadFontFromMemory(".ttf", inter_ttf, inter_ttf_end - inter_ttf, 120, NULL, 0);
     if (font.texture.id == 0) {
         font = GetFontDefault();
     }
-    
+
     SSHPTYServer server;
     if (!server.start_server()) {
         LOGE("Failed to start SSH PTY server");
         CloseWindow();
         return 1;
     }
-    
+
     while (!WindowShouldClose() && server.is_running()) {
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             Vector2 mousePos = GetMousePosition();
@@ -532,13 +535,13 @@ int main() {
                 break;
             }
         }
-        
+
         BeginDrawing();
         ClearBackground(BLACK);
-        
+
         DrawTextEx(font, "SSH PTY Server - Touch top area to exit", {20, 10}, 20, 1, WHITE);
         DrawTextEx(font, ("Port: " + std::to_string(SSH_PORT)).c_str(), {20, 35}, 16, 1, GRAY);
-        
+
         if (server.has_client()) {
             DrawTextEx(font, "Client Connected", {20, 55}, 16, 1, GREEN);
             server.render(font);
@@ -546,12 +549,12 @@ int main() {
             DrawTextEx(font, "Waiting for SSH connection...", {20, 55}, 16, 1, YELLOW);
             DrawTextEx(font, "Connect with: ssh -p 2222 user@<device_ip>", {20, 400}, 16, 1, WHITE);
         }
-        
+
         EndDrawing();
     }
-    
+
     server.stop();
     CloseWindow();
-    
+
     return 0;
 }
