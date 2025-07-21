@@ -85,9 +85,6 @@ class SoftwarePanel : public ListWidget {
 public:
   explicit SoftwarePanel(QWidget* parent = nullptr);
 
-private slots:
-  void openTmuxViewer();
-
 private:
   void showEvent(QShowEvent *event) override;
   void updateLabels();
@@ -100,7 +97,6 @@ private:
   ButtonControl *installBtn;
   ButtonControl *downloadBtn;
   ButtonControl *targetBranchBtn;
-  ButtonControl *tmuxBtn;
 
   Params params;
   ParamWatcher *fs_watch;

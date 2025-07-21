@@ -78,11 +78,6 @@ SoftwarePanel::SoftwarePanel(QWidget* parent) : ListWidget(parent) {
     addItem(targetBranchBtn);
   }
 
-  // tmux viewer button
-  tmuxBtn = new ButtonControl(tr("Tmux Viewer"), tr("OPEN"));
-  connect(tmuxBtn, &ButtonControl::clicked, this, &SoftwarePanel::openTmuxViewer);
-  addItem(tmuxBtn);
-
   // uninstall button
   auto uninstallBtn = new ButtonControl(tr("Uninstall %1").arg(getBrand()), tr("UNINSTALL"));
   connect(uninstallBtn, &ButtonControl::clicked, [&]() {
