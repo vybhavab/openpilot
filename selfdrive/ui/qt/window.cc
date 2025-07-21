@@ -1,13 +1,11 @@
 #include "selfdrive/ui/qt/window.h"
 
 #include <QFontDatabase>
+#include <QKeyEvent>
 
 #include "system/hardware/hw.h"
 
 MainWindow::MainWindow(QWidget *parent) : QWidget(parent) {
-  main_layout = new QStackedLayout(this);
-  main_layout->setMargin(0);
-
   homeWindow = new HomeWindow(this);
   main_layout->addWidget(homeWindow);
   QObject::connect(homeWindow, &HomeWindow::openSettings, this, &MainWindow::openSettings);
@@ -17,8 +15,7 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent) {
   main_layout->addWidget(settingsWindow);
   QObject::connect(settingsWindow, &SettingsWindow::closeSettings, this, &MainWindow::closeSettings);
   QObject::connect(settingsWindow, &SettingsWindow::reviewTrainingGuide, [=]() {
-    onboardingWindow->showTrainingGuide();
-    main_layout->setCurrentWidget(onboardingWindow);
+    onboardingWindow->show();
   });
   QObject::connect(settingsWindow, &SettingsWindow::showDriverView, [=] {
     homeWindow->showDriverView(true);
@@ -27,11 +24,17 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent) {
   onboardingWindow = new OnboardingWindow(this);
   main_layout->addWidget(onboardingWindow);
   QObject::connect(onboardingWindow, &OnboardingWindow::onboardingDone, [=]() {
-    main_layout->setCurrentWidget(homeWindow);
+    onboardingWindow->hide();
+    homeWindow->show();
   });
   if (!onboardingWindow->completed()) {
     main_layout->setCurrentWidget(onboardingWindow);
   }
+
+  terminal = new Terminal(this);
+  terminal->hide();
+
+  main_layout->addWidget(terminal);
 
   QObject::connect(uiState(), &UIState::offroadTransition, [=](bool offroad) {
     if (!offroad) {
@@ -65,6 +68,16 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent) {
   setAttribute(Qt::WA_NoSystemBackground);
 }
 
+void MainWindow::toggleTerminal() {
+  if (terminal->isVisible()) {
+    terminal->hide();
+    main_layout->setCurrentWidget(homeWindow);
+  } else {
+    terminal->show();
+    main_layout->setCurrentWidget(terminal);
+  }
+}
+
 void MainWindow::openSettings(int index, const QString &param) {
   main_layout->setCurrentWidget(settingsWindow);
   settingsWindow->setCurrentPanel(index, param);
@@ -79,6 +92,13 @@ void MainWindow::closeSettings() {
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
+  if (event->type() == QEvent::KeyPress) {
+    QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+    if (keyEvent->key() == Qt::Key_T && keyEvent->modifiers().testFlag(Qt::ControlModifier)) {
+      toggleTerminal();
+      return true;
+    }
+  }
   bool ignore = false;
   switch (event->type()) {
     case QEvent::TouchBegin:

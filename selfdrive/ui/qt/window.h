@@ -6,12 +6,14 @@
 #include "selfdrive/ui/qt/home.h"
 #include "selfdrive/ui/qt/offroad/onboarding.h"
 #include "selfdrive/ui/qt/offroad/settings.h"
+#include "selfdrive/ui/qt/terminal/terminal.h"
 
 class MainWindow : public QWidget {
   Q_OBJECT
 
 public:
   explicit MainWindow(QWidget *parent = 0);
+  void toggleTerminal();
 
 private:
   bool eventFilter(QObject *obj, QEvent *event) override;
@@ -22,4 +24,5 @@ private:
   HomeWindow *homeWindow;
   SettingsWindow *settingsWindow;
   OnboardingWindow *onboardingWindow;
+  Terminal *terminal;
 };
