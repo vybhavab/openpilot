@@ -33,7 +33,7 @@ Terminal::~Terminal() {
     waitpid(child_pid, NULL, 0);
   }
   if (master_fd != -1) {
-    close(master_fd);
+    ::close(master_fd);
   }
 }
 
