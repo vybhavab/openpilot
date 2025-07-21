@@ -124,3 +124,6 @@ if arch != "Darwin":
   # build new PTY terminal programs without embedded font for now
   raylib_env.Program("pty_terminal", ["pty_terminal.cc"], LIBS=raylib_libs)
   raylib_env.Program("ssh_pty_server", ["ssh_pty_server.cc"], LIBS=raylib_libs)
+  
+  # build simple PTY server (no raylib dependency)
+  env.Program("simple_pty_server", ["simple_pty_server.cc"], LIBS=common + ["util"])

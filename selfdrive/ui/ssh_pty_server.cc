@@ -16,19 +16,14 @@
 #ifdef __APPLE__
 #include <util.h>
 #else
-#include <pty.h>
 #endif
 #include <signal.h>
 #include <sys/wait.h>
 #include <errno.h>
 
 #include "common/swaglog.h"
-#include "common/util.h"
 
-// Include raylib after other headers to avoid macro conflicts
 #include "third_party/raylib/include/raylib.h"
-
-// Don't include hardware header due to macro conflicts - use direct calls instead
 
 const int SCREEN_WIDTH = 2160;
 const int SCREEN_HEIGHT = 1080;
@@ -184,7 +179,7 @@ public:
                 LOGE("Failed to get slave PTY name");
                 exit(1);
             }
-            
+
             int slave_fd = open(slave_name, O_RDWR);
             if (slave_fd == -1) {
                 LOGE("Failed to open slave PTY: %s", strerror(errno));
@@ -233,7 +228,7 @@ public:
                     if (bytes_read > 0) {
                         buffer[bytes_read] = '\0';
                         process_output(std::string(buffer, bytes_read));
-                        
+
                         ssize_t sent = send(client_socket, buffer, bytes_read, MSG_NOSIGNAL);
                         if (sent < 0) {
                             LOGE("Failed to send to client: %s", strerror(errno));
@@ -269,7 +264,7 @@ public:
 
     void cleanup_client() {
         client_connected = false;
-        
+
         if (client_socket != -1) {
             close(client_socket);
             client_socket = -1;
@@ -316,7 +311,7 @@ public:
         if (screen.empty()) {
             return;
         }
-        
+
         for (auto& row : screen) {
             for (auto& cell : row) {
                 cell.ch = ' ';
@@ -376,13 +371,13 @@ public:
         if (screen.empty() || screen.size() < ROWS) {
             return;
         }
-        
+
         for (int i = 0; i < ROWS - 1; i++) {
             if (i + 1 < static_cast<int>(screen.size())) {
                 screen[i] = screen[i + 1];
             }
         }
-        
+
         if (ROWS - 1 < static_cast<int>(screen.size())) {
             for (auto& cell : screen[ROWS - 1]) {
                 cell.ch = ' ';
@@ -523,12 +518,12 @@ public:
             if (row >= static_cast<int>(screen.size()) || screen[row].size() != COLS) {
                 continue;
             }
-            
+
             for (int col = 0; col < COLS; col++) {
                 if (col >= static_cast<int>(screen[row].size())) {
                     continue;
                 }
-                
+
                 const auto& cell = screen[row][col];
 
                 int x = col * CHAR_WIDTH;
@@ -582,7 +577,7 @@ int main() {
         CloseWindow();
         return 1;
     }
-    
+
     // Keep display on using direct system call
     std::system("echo 0 > /sys/class/backlight/panel0-backlight/bl_power 2>/dev/null || true");
 
@@ -596,7 +591,7 @@ int main() {
                 break;
             }
         }
-        
+
         // Keep display active when there's client activity or touch
         static auto last_activity = std::chrono::steady_clock::now();
         if (touch_detected || server.has_client()) {
@@ -604,7 +599,7 @@ int main() {
             // Keep display on using direct system call
             std::system("echo 0 > /sys/class/backlight/panel0-backlight/bl_power 2>/dev/null || true");
         }
-        
+
         // Refresh display power every 30 seconds to prevent sleep
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::seconds>(now - last_activity).count() < 300) {
