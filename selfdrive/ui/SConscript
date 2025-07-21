@@ -19,7 +19,7 @@ widgets_src = ["qt/widgets/input.cc", "qt/widgets/wifi.cc", "qt/prime_state.cc",
                "qt/widgets/ssh_keys.cc", "qt/widgets/toggle.cc", "qt/widgets/controls.cc",
                "qt/widgets/offroad_alerts.cc", "qt/widgets/prime.cc", "qt/widgets/keyboard.cc",
                "qt/widgets/scrollview.cc", "qt/widgets/cameraview.cc",
-               "#third_party/qrcode/QrCode.cc", "qt/request_repeater.cc", "qt/qt_window.cc", 
+               "#third_party/qrcode/QrCode.cc", "qt/request_repeater.cc", "qt/qt_window.cc",
                "qt/network/networking.cc", "qt/network/wifi_manager.cc"]
 
 widgets = qt_env.Library("qt_widgets", widgets_src, LIBS=base_libs)
@@ -117,15 +117,3 @@ if arch != "Darwin":
     raylib_libs += ["GLESv2", "wayland-client", "wayland-egl", "EGL"]
   else:
     raylib_libs += ["GL"]
-  
-  # build original tmux viewer
-  raylib_env.Program("tmux_viewer", ["tmux_viewer.cc"], LIBS=raylib_libs)
-  
-  # build new PTY terminal programs without embedded font for now
-  raylib_env.Program("pty_terminal", ["pty_terminal.cc"], LIBS=raylib_libs)
-  raylib_env.Program("ssh_pty_server", ["ssh_pty_server.cc"], LIBS=raylib_libs)
-  raylib_env.Program("network_terminal", ["network_terminal.cc"], LIBS=raylib_libs)
-  raylib_env.Program("terminal_display", ["terminal_display.cc"], LIBS=raylib_libs)
-  
-  # build simple PTY server (no raylib dependency)
-  env.Program("simple_pty_server", ["simple_pty_server.cc"], LIBS=common + ["util"])

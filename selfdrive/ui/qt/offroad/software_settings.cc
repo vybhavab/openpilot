@@ -163,8 +163,3 @@ void SoftwarePanel::updateLabels() {
 
   update();
 }
-
-// tmux viewer setup
-void SoftwarePanel::openTmuxViewer() {
-  std::system("/data/openpilot/selfdrive/ui/tmux_viewer &");
-}
