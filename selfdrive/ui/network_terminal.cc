@@ -13,7 +13,11 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#ifdef __APPLE__
+#include <util.h>
+#else
 #include <pty.h>
+#endif
 #include <signal.h>
 #include <sys/wait.h>
 #include <errno.h>
