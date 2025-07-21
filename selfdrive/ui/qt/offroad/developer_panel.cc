@@ -10,7 +10,7 @@
 DeveloperPanel::DeveloperPanel(QWidget* parent) : ListWidget(parent) {
   showTerminalBtn = new ButtonControl("Show Terminal", "OPEN");
   QObject::connect(showTerminalBtn, &ButtonControl::clicked, [=]() {
-    qobject_cast<MainWindow*>(parent->parent()->parent())->toggleTerminal();
+    qobject_cast<MainWindow*>(parent->parent())->toggleTerminal();
   });
   addItem(showTerminalBtn);
 
