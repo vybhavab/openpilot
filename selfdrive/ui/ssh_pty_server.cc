@@ -22,10 +22,13 @@
 #include <sys/wait.h>
 #include <errno.h>
 
-#include "third_party/raylib/include/raylib.h"
 #include "common/swaglog.h"
 #include "common/util.h"
-#include "system/hardware/hw.h"
+
+// Include raylib after other headers to avoid macro conflicts
+#include "third_party/raylib/include/raylib.h"
+
+// Don't include hardware header due to macro conflicts - use direct calls instead
 
 const int SCREEN_WIDTH = 2160;
 const int SCREEN_HEIGHT = 1080;
@@ -545,13 +548,8 @@ int main() {
         return 1;
     }
     
-    // Keep display on
-    try {
-        Hardware::set_display_power(true);
-    } catch (...) {
-        // Fallback for systems without hardware interface
-        LOG("Hardware interface not available, using fallback");
-    }
+    // Keep display on using direct system call
+    std::system("echo 0 > /sys/class/backlight/panel0-backlight/bl_power 2>/dev/null || true");
 
     while (!WindowShouldClose() && server.is_running()) {
         // Handle touch input and keep display active
@@ -568,11 +566,8 @@ int main() {
         static auto last_activity = std::chrono::steady_clock::now();
         if (touch_detected || server.has_client()) {
             last_activity = std::chrono::steady_clock::now();
-            try {
-                Hardware::set_display_power(true);
-            } catch (...) {
-                // Fallback - just continue without hardware control
-            }
+            // Keep display on using direct system call
+            std::system("echo 0 > /sys/class/backlight/panel0-backlight/bl_power 2>/dev/null || true");
         }
         
         // Refresh display power every 30 seconds to prevent sleep
@@ -580,11 +575,8 @@ int main() {
         if (std::chrono::duration_cast<std::chrono::seconds>(now - last_activity).count() < 300) {
             static auto last_refresh = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_refresh).count() > 30) {
-                try {
-                    Hardware::set_display_power(true);
-                } catch (...) {
-                    // Fallback - just continue without hardware control
-                }
+                // Keep display on using direct system call
+                std::system("echo 0 > /sys/class/backlight/panel0-backlight/bl_power 2>/dev/null || true");
                 last_refresh = now;
             }
         }
