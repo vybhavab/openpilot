@@ -68,8 +68,14 @@ private:
 public:
     SSHPTYServer() : cursor_row(0), cursor_col(0), running(true), client_connected(false),
                      server_socket(-1), client_socket(-1), master_fd(-1), child_pid(-1) {
-        screen.resize(ROWS, std::vector<TerminalCell>(COLS));
-        clear_screen();
+        try {
+            screen.resize(ROWS, std::vector<TerminalCell>(COLS));
+            clear_screen();
+            LOG("SSH PTY Server initialized successfully");
+        } catch (const std::exception& e) {
+            LOGE("Failed to initialize SSH PTY Server: %s", e.what());
+            running = false;
+        }
     }
 
     ~SSHPTYServer() {
@@ -218,18 +224,31 @@ public:
                     if (bytes_read > 0) {
                         buffer[bytes_read] = '\0';
                         process_output(std::string(buffer, bytes_read));
-
-                        send(client_socket, buffer, bytes_read, MSG_NOSIGNAL);
+                        
+                        ssize_t sent = send(client_socket, buffer, bytes_read, MSG_NOSIGNAL);
+                        if (sent < 0) {
+                            LOGE("Failed to send to client: %s", strerror(errno));
+                            break;
+                        }
                     } else if (bytes_read == 0) {
+                        break;
+                    } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                        LOGE("PTY read error: %s", strerror(errno));
                         break;
                     }
                 }
-
                 if (FD_ISSET(client_socket, &read_fds)) {
                     ssize_t bytes_read = read(client_socket, buffer, sizeof(buffer));
                     if (bytes_read > 0) {
-                        write(master_fd, buffer, bytes_read);
+                        ssize_t written = write(master_fd, buffer, bytes_read);
+                        if (written < 0) {
+                            LOGE("Failed to write to PTY: %s", strerror(errno));
+                            break;
+                        }
                     } else if (bytes_read == 0) {
+                        break;
+                    } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                        LOGE("Client read error: %s", strerror(errno));
                         break;
                     }
                 }
@@ -510,17 +529,14 @@ public:
     bool has_client() const { return client_connected; }
 };
 
-extern const uint8_t inter_ttf[] asm("_binary_selfdrive_ui_installer_inter_ascii_ttf_start");
-extern const uint8_t inter_ttf_end[] asm("_binary_selfdrive_ui_installer_inter_ascii_ttf_end");
+// Font loading disabled for now to avoid segfaults
 
 int main() {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "SSH PTY Server");
     SetTargetFPS(60);
 
-    Font font = LoadFontFromMemory(".ttf", inter_ttf, inter_ttf_end - inter_ttf, 120, NULL, 0);
-    if (font.texture.id == 0) {
-        font = GetFontDefault();
-    }
+    Font font = GetFontDefault();
+    LOG("Using default raylib font");
 
     SSHPTYServer server;
     if (!server.start_server()) {

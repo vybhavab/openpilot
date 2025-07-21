@@ -59,8 +59,14 @@ private:
 
 public:
     PTYTerminal() : cursor_row(0), cursor_col(0), running(true), master_fd(-1), child_pid(-1) {
-        screen.resize(ROWS, std::vector<TerminalCell>(COLS));
-        clear_screen();
+        try {
+            screen.resize(ROWS, std::vector<TerminalCell>(COLS));
+            clear_screen();
+            LOG("PTY Terminal initialized successfully");
+        } catch (const std::exception& e) {
+            LOGE("Failed to initialize PTY Terminal: %s", e.what());
+            running = false;
+        }
     }
 
     ~PTYTerminal() {
@@ -423,17 +429,14 @@ public:
     bool is_running() const { return running; }
 };
 
-extern const uint8_t inter_ttf[] asm("_binary_selfdrive_ui_installer_inter_ascii_ttf_start");
-extern const uint8_t inter_ttf_end[] asm("_binary_selfdrive_ui_installer_inter_ascii_ttf_end");
+// Font loading disabled for now to avoid segfaults
 
 int main() {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "PTY Terminal");
     SetTargetFPS(60);
 
-    Font font = LoadFontFromMemory(".ttf", inter_ttf, inter_ttf_end - inter_ttf, 120, NULL, 0);
-    if (font.texture.id == 0) {
-        font = GetFontDefault();
-    }
+    Font font = GetFontDefault();
+    LOG("Using default raylib font");
 
     PTYTerminal terminal;
     if (!terminal.start_shell()) {

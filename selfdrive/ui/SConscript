@@ -118,13 +118,9 @@ if arch != "Darwin":
   else:
     raylib_libs += ["GL"]
   
-  # create font binary for PTY programs
-  inter = raylib_env.Command("installer/inter_ttf.o", "installer/inter-ascii.ttf",
-                             "ld -r -b binary -o $TARGET $SOURCE")
-  
   # build original tmux viewer
   raylib_env.Program("tmux_viewer", ["tmux_viewer.cc"], LIBS=raylib_libs)
   
-  # build new PTY terminal programs with font
-  raylib_env.Program("pty_terminal", ["pty_terminal.cc", inter], LIBS=raylib_libs)
-  raylib_env.Program("ssh_pty_server", ["ssh_pty_server.cc", inter], LIBS=raylib_libs)
+  # build new PTY terminal programs without embedded font for now
+  raylib_env.Program("pty_terminal", ["pty_terminal.cc"], LIBS=raylib_libs)
+  raylib_env.Program("ssh_pty_server", ["ssh_pty_server.cc"], LIBS=raylib_libs)
